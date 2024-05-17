@@ -1,0 +1,285 @@
+use super::{*, square::*};
+
+pub const FILEA_MASK: u64 = 0x0101010101010101;
+pub const FILEH_MASK: u64 = 0x0101010101010101 << 7;
+
+pub const RANK1_MASK: u64 = 0xFF;
+pub const RANK2_MASK: u64 = 0xFF<< (8 * 1);
+pub const RANK7_MASK: u64 = 0xFF<< (8 * 6);
+pub const RANK8_MASK: u64 = 0xFF<< (8 * 7);
+
+static mut SQUARE_MASK: [u64; SQUARE_NB] = [0_u64; SQUARE_NB];
+static mut PAWN_ATTACKS: [[u64; SQUARE_NB]; SIDE_NB] = [[0_u64; SQUARE_NB]; SIDE_NB];
+static mut KNIGHT_ATTACKS: [u64; SQUARE_NB] = [0_u64; SQUARE_NB];
+static mut KING_ATTACKS: [u64; SQUARE_NB] = [0_u64; SQUARE_NB];
+static mut INDEX64: [usize; SQUARE_NB] = [0_usize; SQUARE_NB];
+static mut ROOKATTACKS: [[u64;1<<12];SQUARE_NB]=[[0_u64; 1<<12]; SQUARE_NB];
+static mut BISHOPATTACKS: [[u64;1<<9];SQUARE_NB]=[[0_u64; 1<<9]; SQUARE_NB];
+
+pub const fn up(b: u64) -> u64 {
+    return b << 8;
+}
+
+pub const fn down(b: u64) -> u64 {
+    return b >> 8;
+}
+
+pub const fn right(b: u64) -> u64 {
+    return (b & !FILEH_MASK) << 1;
+}
+
+pub const fn left(b: u64) -> u64 {
+    return (b & !FILEA_MASK) >> 1;
+}
+
+pub const fn up_right(b: u64)-> u64 {
+	return up(right(b));
+}
+
+pub const fn up_left(b: u64) ->u64 {
+	return up(left(b));
+}
+
+pub const fn down_right(b: u64)-> u64 {
+	return down(right(b))
+}
+
+pub const fn down_left(b: u64)-> u64 {
+	return down(left(b))
+}
+
+pub fn all_pawn_attacks(side: usize, b: u64) -> u64 {
+	if side==SIDE_WHITE {
+		return ((b & !FILEA_MASK) << 7) | ((b & !FILEH_MASK) << 9)
+	} else {
+		return ((b & !FILEA_MASK) >> 9) | ((b & !FILEH_MASK) >> 7)
+	}
+}
+
+pub fn pop_count(b: u64) -> isize {
+	return b.count_ones() as isize;
+}
+
+pub fn first_one(b: u64) -> Square {	
+	return b.trailing_zeros() as Square;
+    /*unsafe {
+        let index = (((b - 1) ^ b).wrapping_mul(0x03f79d71b4cb0a89)) >> 58;
+		let j =INDEX64[index as usize];
+		let  k =b.trailing_zeros();
+		if j as u32 != k {
+			panic!("fo");
+		}
+        return j
+    }*/
+}
+
+pub  const fn square_mask(sq: Square) -> u64 {
+	return 1_u64<<sq;
+    /*unsafe {        
+        return SQUARE_MASK[sq];
+    }*/
+}
+
+pub fn more_than_one(value: u64)-> bool {
+	return value != 0 && ((value-1)&value) != 0;
+}
+
+pub fn pawn_attacks(side: usize, from: Square) -> u64 {
+    unsafe {
+        return PAWN_ATTACKS[side][from];
+    }
+}
+
+pub fn knight_attacks(from: Square) -> u64 {
+    unsafe {
+        return KNIGHT_ATTACKS[from];
+    }
+}
+
+pub fn king_attacks(from: Square) -> u64 {
+    unsafe {
+        return KING_ATTACKS[from];
+    }
+}
+
+pub fn bishop_attacks(from: Square, occ: u64) -> u64 {
+    unsafe{
+        let index = ((BISHOPMASK[from]&occ).wrapping_mul(BISHOPMULT[from]))>>BISHOPSHIFT;
+        return BISHOPATTACKS[from][index as usize];
+    }
+}
+
+pub fn rook_attacks(from: Square, occ: u64) -> u64 {
+    unsafe{
+        let index = ((ROOKMASK[from]&occ).wrapping_mul(ROOKMULT[from]))>>ROOKSHIFT;
+        return ROOKATTACKS[from][index as usize];
+    }
+}
+
+pub fn queen_attacks(from: Square, occ: u64) -> u64 {
+    return bishop_attacks(from, occ) | rook_attacks(from, occ);
+}
+
+const BISHOPSHIFT: usize = 55;
+const ROOKSHIFT: usize = 52;
+
+static ROOKMULT: [u64; SQUARE_NB] = [
+	0x0080001020400080, 0x0040001000200040, 0x0080081000200080, 0x0080040800100080,
+	0x0080020400080080, 0x0080010200040080, 0x0080008001000200, 0x0080002040800100,
+	0x0000800020400080, 0x0000400020005000, 0x0000801000200080, 0x0000800800100080,
+	0x0000800400080080, 0x0000800200040080, 0x0000800100020080, 0x0000800040800100,
+	0x0000208000400080, 0x0000404000201000, 0x0000808010002000, 0x0000808008001000,
+	0x0000808004000800, 0x0000808002000400, 0x0000010100020004, 0x0000020000408104,
+	0x0000208080004000, 0x0000200040005000, 0x0000100080200080, 0x0000080080100080,
+	0x0000040080080080, 0x0000020080040080, 0x0000010080800200, 0x0000800080004100,
+	0x0000204000800080, 0x0000200040401000, 0x0000100080802000, 0x0000080080801000,
+	0x0000040080800800, 0x0000020080800400, 0x0000020001010004, 0x0000800040800100,
+	0x0000204000808000, 0x0000200040008080, 0x0000100020008080, 0x0000080010008080,
+	0x0000040008008080, 0x0000020004008080, 0x0000010002008080, 0x0000004081020004,
+	0x0000204000800080, 0x0000200040008080, 0x0000100020008080, 0x0000080010008080,
+	0x0000040008008080, 0x0000020004008080, 0x0000800100020080, 0x0000800041000080,
+	0x00FFFCDDFCED714A, 0x007FFCDDFCED714A, 0x003FFFCDFFD88096, 0x0000040810002101,
+	0x0001000204080011, 0x0001000204000801, 0x0001000082000401, 0x0001FFFAABFAD1A2,
+];
+
+ static ROOKMASK: [u64; SQUARE_NB] = [
+	0x000101010101017E, 0x000202020202027C, 0x000404040404047A, 0x0008080808080876,
+	0x001010101010106E, 0x002020202020205E, 0x004040404040403E, 0x008080808080807E,
+	0x0001010101017E00, 0x0002020202027C00, 0x0004040404047A00, 0x0008080808087600,
+	0x0010101010106E00, 0x0020202020205E00, 0x0040404040403E00, 0x0080808080807E00,
+	0x00010101017E0100, 0x00020202027C0200, 0x00040404047A0400, 0x0008080808760800,
+	0x00101010106E1000, 0x00202020205E2000, 0x00404040403E4000, 0x00808080807E8000,
+	0x000101017E010100, 0x000202027C020200, 0x000404047A040400, 0x0008080876080800,
+	0x001010106E101000, 0x002020205E202000, 0x004040403E404000, 0x008080807E808000,
+	0x0001017E01010100, 0x0002027C02020200, 0x0004047A04040400, 0x0008087608080800,
+	0x0010106E10101000, 0x0020205E20202000, 0x0040403E40404000, 0x0080807E80808000,
+	0x00017E0101010100, 0x00027C0202020200, 0x00047A0404040400, 0x0008760808080800,
+	0x00106E1010101000, 0x00205E2020202000, 0x00403E4040404000, 0x00807E8080808000,
+	0x007E010101010100, 0x007C020202020200, 0x007A040404040400, 0x0076080808080800,
+	0x006E101010101000, 0x005E202020202000, 0x003E404040404000, 0x007E808080808000,
+	0x7E01010101010100, 0x7C02020202020200, 0x7A04040404040400, 0x7608080808080800,
+	0x6E10101010101000, 0x5E20202020202000, 0x3E40404040404000, 0x7E80808080808000,
+];
+
+static BISHOPMULT: [u64; SQUARE_NB] = [
+	0x0002020202020200, 0x0002020202020000, 0x0004010202000000, 0x0004040080000000,
+	0x0001104000000000, 0x0000821040000000, 0x0000410410400000, 0x0000104104104000,
+	0x0000040404040400, 0x0000020202020200, 0x0000040102020000, 0x0000040400800000,
+	0x0000011040000000, 0x0000008210400000, 0x0000004104104000, 0x0000002082082000,
+	0x0004000808080800, 0x0002000404040400, 0x0001000202020200, 0x0000800802004000,
+	0x0000800400A00000, 0x0000200100884000, 0x0000400082082000, 0x0000200041041000,
+	0x0002080010101000, 0x0001040008080800, 0x0000208004010400, 0x0000404004010200,
+	0x0000840000802000, 0x0000404002011000, 0x0000808001041000, 0x0000404000820800,
+	0x0001041000202000, 0x0000820800101000, 0x0000104400080800, 0x0000020080080080,
+	0x0000404040040100, 0x0000808100020100, 0x0001010100020800, 0x0000808080010400,
+	0x0000820820004000, 0x0000410410002000, 0x0000082088001000, 0x0000002011000800,
+	0x0000080100400400, 0x0001010101000200, 0x0002020202000400, 0x0001010101000200,
+	0x0000410410400000, 0x0000208208200000, 0x0000002084100000, 0x0000000020880000,
+	0x0000001002020000, 0x0000040408020000, 0x0004040404040000, 0x0002020202020000,
+	0x0000104104104000, 0x0000002082082000, 0x0000000020841000, 0x0000000000208800,
+	0x0000000010020200, 0x0000000404080200, 0x0000040404040400, 0x0002020202020200,
+];
+
+static BISHOPMASK: [u64; SQUARE_NB] = [
+	0x0040201008040200, 0x0000402010080400, 0x0000004020100A00, 0x0000000040221400,
+	0x0000000002442800, 0x0000000204085000, 0x0000020408102000, 0x0002040810204000,
+	0x0020100804020000, 0x0040201008040000, 0x00004020100A0000, 0x0000004022140000,
+	0x0000000244280000, 0x0000020408500000, 0x0002040810200000, 0x0004081020400000,
+	0x0010080402000200, 0x0020100804000400, 0x004020100A000A00, 0x0000402214001400,
+	0x0000024428002800, 0x0002040850005000, 0x0004081020002000, 0x0008102040004000,
+	0x0008040200020400, 0x0010080400040800, 0x0020100A000A1000, 0x0040221400142200,
+	0x0002442800284400, 0x0004085000500800, 0x0008102000201000, 0x0010204000402000,
+	0x0004020002040800, 0x0008040004081000, 0x00100A000A102000, 0x0022140014224000,
+	0x0044280028440200, 0x0008500050080400, 0x0010200020100800, 0x0020400040201000,
+	0x0002000204081000, 0x0004000408102000, 0x000A000A10204000, 0x0014001422400000,
+	0x0028002844020000, 0x0050005008040200, 0x0020002010080400, 0x0040004020100800,
+	0x0000020408102000, 0x0000040810204000, 0x00000A1020400000, 0x0000142240000000,
+	0x0000284402000000, 0x0000500804020000, 0x0000201008040200, 0x0000402010080400,
+	0x0002040810204000, 0x0004081020400000, 0x000A102040000000, 0x0014224000000000,
+	0x0028440200000000, 0x0050080402000000, 0x0020100804020000, 0x0040201008040200,
+];
+
+fn magicify(b: u64, index: u64)-> u64 {
+	let mut bitmask= 0_u64;
+	let count = b.count_ones();
+
+	let mut i = 0;
+	let mut our = b;
+	while i < count {
+		let their = (our-1)&our ^ our;
+		if (1_u64 << i) & index != 0 {
+			bitmask |= their;
+		}
+		our &= our-1;
+		i +=1;
+	}	
+
+	return bitmask;
+}
+
+fn compute_slide_attacks(from: Square, occ: u64, shifts: [fn(u64)->u64;4]) -> u64 {
+	let bb = 1_u64<<from;
+	let mut result = 0_u64;
+	for f in shifts {
+		let mut x = f(bb);
+		while x != 0 {
+			result |= x;
+			if (x & occ) != 0 {
+				break;
+			}
+			x = f(x);
+		}
+	}
+	return result;
+}
+
+pub(super) fn init_bitborads() {
+
+	let rook_shifts = [up, down, right, left];
+	let bishop_shifts = [up_right, up_left, down_right, down_left];
+
+    unsafe {
+        for sq in 0..SQUARE_NB {
+            let b = 1_u64 << sq;
+            SQUARE_MASK[sq] = b;
+
+            let i = (((b - 1) ^ b).wrapping_mul(0x03f79d71b4cb0a89)) >> 58;
+            INDEX64[i as usize] = sq;
+
+            PAWN_ATTACKS[SIDE_WHITE][sq] = up(left(b) | right(b));
+            PAWN_ATTACKS[SIDE_BLACK][sq] = down(left(b) | right(b));
+
+            KING_ATTACKS[sq] = up(right(b)) | up(b) | up(left(b)) | left(b) |
+				down(left(b)) | down(b) | down(right(b)) | right(b);
+
+            KNIGHT_ATTACKS[sq] = right(up(right(b))) | up(up(right(b))) |
+				up(up(left(b))) | left(up(left(b))) |
+				left(down(left(b))) | down(down(left(b))) |
+				down(down(right(b))) | right(down(right(b)));
+
+			//Rooks
+			let mask = ROOKMASK[sq];//rook_attacks_slow(from, 0);
+			let count = 1_u64 << mask.count_ones();
+			for i in 0 .. count {
+				let from = sq;
+				let occ: u64 = magicify(mask, i);
+				let attacks = compute_slide_attacks(from, occ, rook_shifts);
+
+				let index = ((ROOKMASK[from]&occ).wrapping_mul(ROOKMULT[from]))>>ROOKSHIFT;
+        		ROOKATTACKS[from][index as usize]= attacks;
+			}
+
+			//Bishops
+			let mask = BISHOPMASK[sq];
+			let count = 1_u64 << mask.count_ones();
+			for i in 0 .. count {
+				let from = sq;
+				let occ: u64 = magicify(mask, i);
+				let attacks = compute_slide_attacks(from, occ, bishop_shifts);
+
+				let index = ((BISHOPMASK[from]&occ).wrapping_mul(BISHOPMULT[from]))>>BISHOPSHIFT;
+        		BISHOPATTACKS[from][index as usize]= attacks;
+			}
+        }
+    }
+}
