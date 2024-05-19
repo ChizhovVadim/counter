@@ -31,6 +31,11 @@ fn test_see() {
             mv: "d3e5",
             val: PIECE_VALUES_SEE[chess::PIECE_PAWN] - PIECE_VALUES_SEE[chess::PIECE_KNIGHT],
         },
+        SeeTest {
+            fen: "8/p3q1kp/1p2Pnp1/3pQ3/2pP4/1nP3NP/1B4P1/6K1 b - - 0 1",
+            mv: "e7e6",
+            val: PIECE_VALUES_SEE[chess::PIECE_PAWN] - PIECE_VALUES_SEE[chess::PIECE_QUEEN],
+        },
     ];
     for test in tests.iter() {
         let pos = chess::Position::from_fen(&test.fen);
@@ -43,11 +48,10 @@ fn test_see() {
         if val != test.val {
             panic!("{} {:?}", val, test);
         }
-        assert!(see(pos, mv) == test.val);
     }
 }
 
-fn see(pos: &chess::Position, mv: chess::Move) -> isize {
+pub fn see(pos: &chess::Position, mv: chess::Move) -> isize {
     let from = mv.from();
     let to = mv.to();
     let mut pc = mv.moving_piece();
@@ -100,34 +104,34 @@ fn least_valuable_attacker(
     occ: u64,
 ) -> (chess::Piece, chess::Square) {
     let own = p.colours(side) & occ;
-    let attacks = chess::bitboard::pawn_attacks(side ^ 1, to) & own & p.pawns;
-    if attacks != 0 {
-        return (chess::PIECE_PAWN, chess::bitboard::first_one(attacks));
+    if let Some(from) = first_one(chess::bitboard::pawn_attacks(side ^ 1, to) & own & p.pawns){
+        return (chess::PIECE_PAWN, from);
     }
-    let attacks = chess::bitboard::knight_attacks(to) & own & p.knights;
-    if attacks != 0 {
-        return (chess::PIECE_KNIGHT, chess::bitboard::first_one(attacks));
+    if let Some(from) = first_one(chess::bitboard::knight_attacks(to) & own & p.knights) {
+        return (chess::PIECE_KNIGHT, from);
     }
     let bishop_attacks = chess::bitboard::bishop_attacks(to, occ);
-    let atatcks = bishop_attacks & own & p.bishops;
-    if atatcks != 0 {
-        return (chess::PIECE_BISHOP, chess::bitboard::first_one(attacks));
+    if let Some(from) = first_one(bishop_attacks & own & p.bishops) {
+        return (chess::PIECE_BISHOP, from);
     }
     let rook_attacks = chess::bitboard::rook_attacks(to, occ);
-    let atatcks = rook_attacks & own & p.rooks;
-    if atatcks != 0 {
-        return (chess::PIECE_ROOK, chess::bitboard::first_one(attacks));
+    if let Some(from) = first_one(rook_attacks & own & p.rooks) {
+        return (chess::PIECE_ROOK, from);
     }
-    let atatcks = (bishop_attacks | rook_attacks) & own & p.queens;
-    if atatcks != 0 {
-        return (chess::PIECE_QUEEN, chess::bitboard::first_one(attacks));
+    if let Some(from) = first_one((bishop_attacks | rook_attacks) & own & p.queens) {
+        return (chess::PIECE_QUEEN, from);
     }
-    let atatcks = chess::bitboard::king_attacks(to) & own & p.kings;
-    if atatcks != 0 {
-        return (chess::PIECE_KING, chess::bitboard::first_one(attacks));
+    if let Some(from) = first_one(chess::bitboard::king_attacks(to) & own & p.kings) {
+        return (chess::PIECE_KING, from);
     }
-
     return (chess::PIECE_EMPTY, chess::square::SQUARE_NONE);
+}
+
+fn first_one(b: u64) -> Option<Square> {
+    if b == 0 {
+        return None;
+    }
+    return Some(chess::bitboard::first_one(b));
 }
 
 static PIECE_VALUES_SEE: [isize; chess::PIECE_NB] = [0, 1, 4, 4, 6, 12, 120, 0];
