@@ -1,8 +1,8 @@
-use crate::types;
 use crate::chess;
-use std::fmt::Write;
+use crate::types;
 use crate::uci;
 use crate::uci::Game;
+use std::fmt::Write;
 use std::time::Duration;
 
 pub fn print_uci_search_info(si: &types::SearchInfo) {
@@ -32,7 +32,6 @@ pub fn print_uci_search_info(si: &types::SearchInfo) {
     }
     println!("{}", sb);
 }
-
 
 impl Game {
     pub fn new(fen: &str) -> Option<Game> {
@@ -88,24 +87,50 @@ pub fn parse_game(fields: Vec<&str>) -> Option<Game> {
     return Some(game);
 }
 
-pub fn parse_limits(split: &mut core::str::SplitAsciiWhitespace) -> Option<uci::LimitsType> {
-    let mut result: Option<uci::LimitsType> = None;
+pub fn parse_limits(split: &mut core::str::SplitAsciiWhitespace) -> uci::LimitsType {
+    let mut result = uci::LimitsType {
+        infinite: false,
+        fixed_nodes: None,
+        fixed_time: None,
+        fixed_depth: None,
+        white_time: None,
+        black_time: None,
+        white_increment: None,
+        black_increment: None,
+        moves: None,
+    };
     while let Some(option) = split.next() {
         match option {
+            "wtime" => {
+                let millis = split.next().unwrap().parse().unwrap();
+                result.white_time = Some(millis);
+            }
+            "btime" => {
+                let millis = split.next().unwrap().parse().unwrap();
+                result.black_time = Some(millis);
+            }
+            "winc" => {
+                let millis = split.next().unwrap().parse().unwrap();
+                result.white_increment = Some(millis);
+            }
+            "binc" => {
+                let millis = split.next().unwrap().parse().unwrap();
+                result.black_increment = Some(millis);
+            }
             "movetime" => {
                 let millis = split.next().unwrap().parse().unwrap();
-                result = Some(uci::LimitsType::FixedTime(Duration::from_millis(millis)));
+                result.fixed_time = Some(millis);
             }
             "depth" => {
                 let depth: u32 = split.next().unwrap().parse().unwrap();
-                result = Some(uci::LimitsType::FixedDepth(depth as usize));
+                result.fixed_depth = Some(depth);
             }
             "nodes" => {
                 let nodes = split.next().unwrap().parse().unwrap();
-                result = Some(uci::LimitsType::FixedNodes(nodes));
+                result.fixed_nodes = Some(nodes);
             }
             "infinite" => {
-                result = Some(uci::LimitsType::Infinite);
+                result.infinite = true;
             }
             _ => (),
         }

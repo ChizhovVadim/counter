@@ -13,31 +13,23 @@ mod parse;
 mod timemanager;
 
 #[derive(Debug)]
-pub enum LimitsType {
-    Infinite,
-    FixedNodes(u64),
-    FixedTime(Duration),
-    FixedDepth(usize),
-    Tournament {
-        time: Duration,
-        inc: Option<Duration>,
-        moves: Option<usize>,
-    },
+struct LimitsType {
+    infinite: bool,
+    fixed_nodes: Option<u64>,
+    fixed_time: Option<u64>,
+    fixed_depth: Option<u32>,
+    white_time: Option<u64>,
+    black_time: Option<u64>,
+    white_increment: Option<u64>,
+    black_increment: Option<u64>,
+    moves: Option<usize>,
 }
 
 enum Message {
     UciGreeting,
-    UciSetOption {
-        name: String,
-        value: String,
-    },
+    UciSetOption { name: String, value: String },
     UciIsReady,
-    UciGo {
-        pos: chess::Position,
-        repeats: Vec<u64>,
-        limits: LimitsType,
-        abort: sync::Arc<sync::atomic::AtomicBool>,
-    },
+    UciGo(types::SearchParams),
     UciNewGame,
     UciQuit,
 }
@@ -83,17 +75,8 @@ fn handle_uci_commands(mut engine: Box<dyn types::IEngine>, tr: mpsc::Receiver<M
                 engine.set_option(&name, &value);
             }
             Message::UciIsReady => println!("readyok"),
-            Message::UciGo {
-                pos,
-                repeats,
-                limits,
-                abort,
-            } => {
-                let res = engine.search(types::SearchParams {
-                    position: pos,
-                    repeats: repeats,
-                    time_manager: Box::new(TimeManager::new(limits, abort)),
-                });
+            Message::UciGo(search_params) => {
+                let res = engine.search(search_params);
                 parse::print_uci_search_info(&res);
                 if res.main_line.len() > 0 {
                     println!("bestmove {}", res.main_line[0]);
@@ -145,13 +128,17 @@ fn read_uci_commands(tx: mpsc::Sender<Message>) {
             "go" => {
                 let limits = parse::parse_limits(&mut split);
                 abort = sync::Arc::new(sync::atomic::AtomicBool::new(false));
+                let tm = build_time_manager(
+                    limits,
+                    game.as_ref().unwrap().position.side_to_move,
+                    abort.clone(),
+                );
                 //TODO handle errors
-                tx.send(Message::UciGo {
-                    pos: game.as_ref().unwrap().position,
+                tx.send(Message::UciGo(types::SearchParams {
+                    position: game.as_ref().unwrap().position,
                     repeats: game.as_ref().unwrap().repeats.clone(),
-                    limits: limits.unwrap(),
-                    abort: abort.clone(),
-                });
+                    time_manager: tm,
+                }));
             }
             "stop" => {
                 abort.store(true, atomic::Ordering::SeqCst);
@@ -164,4 +151,32 @@ fn read_uci_commands(tx: mpsc::Sender<Message>) {
             _ => eprintln!("command not found"),
         }
     }
+}
+
+fn build_time_manager(
+    limits: LimitsType,
+    side: usize,
+    abort: sync::Arc<AtomicBool>,
+) -> Box<dyn types::ITimeManager> {
+    let (main, inc) = if side == chess::SIDE_WHITE {
+        (limits.white_time, limits.white_increment)
+    } else {
+        (limits.black_time, limits.black_increment)
+    };
+    if let Some(main) = main {
+        let main = Duration::from_millis(main);
+        let inc = inc.map(Duration::from_millis);
+        return Box::new(TimeManager::tournament(abort, main, inc, limits.moves));
+    }
+
+    let fixed_depth = limits.fixed_depth.map(|x| x as usize);
+    let fixed_nodes = limits.fixed_nodes;
+    let fixed_time = limits.fixed_time.map(Duration::from_millis);
+
+    return Box::new(TimeManager::new(
+        abort,
+        fixed_time,
+        fixed_depth,
+        fixed_nodes,
+    ));
 }

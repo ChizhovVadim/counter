@@ -30,7 +30,7 @@ pub struct SearchInfo {
     pub main_line: Vec<chess::Move>,
 }
 
-pub trait ITimeManager {
+pub trait ITimeManager : Send {
     fn elapsed(&self) -> Duration;
     fn check_timeout(&self) -> bool;
     fn iteration_complete(&mut self, si: &SearchInfo);
