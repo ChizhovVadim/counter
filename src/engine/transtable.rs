@@ -34,21 +34,32 @@ impl Default for TransEntry {
 
 impl TransTable {
     pub fn new(megabytes: usize) -> Self {
-        eprintln!("init trans table {}", megabytes);
-        let size = 1_024 * 1_024 * megabytes / std::mem::size_of::<TransEntry>();
-        let mut table = Vec::with_capacity(size);
-        for _ in 0..size {
-            table.push(TransEntry::default());
-        }
-        TransTable {
-            megabytes: megabytes,
-            entries: table,
+        let mut tt = TransTable {
+            megabytes: 0,
+            entries: Vec::new(),
             date: 0,
-        }
+        };
+        tt.resize(megabytes);
+        return tt;
     }
 
     pub fn size(&self) -> usize {
         return self.megabytes;
+    }
+
+    pub fn resize(&mut self, megabytes: usize) {
+        let size = (1_usize << 20) * megabytes / std::mem::size_of::<TransEntry>();
+        if size == self.entries.len() {
+            return;
+        }
+        self.entries = Vec::new(); // clear large object in heap
+        eprintln!("init trans table {}", megabytes);
+        let mut table = Vec::with_capacity(size);
+        for _ in 0..size {
+            table.push(TransEntry::default());
+        }
+        self.megabytes = megabytes;
+        self.entries = table;
     }
 
     pub fn inc_date(&mut self) {

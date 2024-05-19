@@ -60,7 +60,9 @@ impl types::IEngine for Engine {
     fn set_option(&mut self, name: &str, value: &str) {
         match name {
             "Hash" => {
-                //TODO
+                if let Ok(size) = value.parse::<u32>() {
+                    self.trans_table.resize(size as usize);
+                }
             }
             "ExperimentSettings" => {
                 self.experiment = value == "true";
