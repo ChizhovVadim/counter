@@ -83,7 +83,7 @@ impl types::IEngine for Engine {
         self.evaluator.init(&search_params.position);
         self.stack[0].key = search_params.position.key;
         self.nodes = 0;
-        return self.iid(&search_params.position);
+        return self.iterative_deepening(&search_params.position);
     }
 }
 

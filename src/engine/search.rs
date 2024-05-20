@@ -3,7 +3,7 @@ use crate::engine::{transtable::*, *};
 use crate::types;
 
 impl Engine {
-    pub fn iid(&mut self, pos: &Position) -> types::SearchInfo {
+    pub fn iterative_deepening(&mut self, pos: &Position) -> types::SearchInfo {
         let mut result = types::SearchInfo {
             depth: 0,
             score: types::UciScore::Centipawns(0),
@@ -11,6 +11,17 @@ impl Engine {
             duration: Duration::ZERO,
             main_line: Vec::new(),
         };
+        {
+            let mut legal_moves = MoveList::new();
+            movegen::generate_legal_moves(pos, &mut legal_moves);
+            if legal_moves.size >= 1 {
+                let rnd_move = legal_moves.moves[0].mv;
+                result.main_line.push(rnd_move);
+            }
+            if legal_moves.size <= 1 {
+                return result;
+            }
+        }
         for depth in 1..MAX_HEIGHT {
             if self.time_manager.check_timeout() {
                 break;
