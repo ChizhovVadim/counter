@@ -136,7 +136,7 @@ fn read_uci_commands(tx: mpsc::Sender<Message>) {
                 //TODO handle errors
                 tx.send(Message::UciGo(types::SearchParams {
                     position: game.as_ref().unwrap().position,
-                    repeats: game.as_ref().unwrap().repeats.clone(),
+                    repeats: game.as_ref().unwrap().two_time_repeats(),
                     time_manager: tm,
                 }));
             }

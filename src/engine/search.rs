@@ -520,9 +520,9 @@ impl Engine {
                 return true;
             }
         }
-        /*if e.history_keys.contains(&key) {
+        if self.repeats.contains(&key) {
             return true;
-        }*/
+        }
         return false;
     }
 }

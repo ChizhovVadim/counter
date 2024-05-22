@@ -2,6 +2,7 @@ use crate::chess;
 use crate::types;
 use crate::uci;
 use crate::uci::Game;
+use std::collections;
 use std::fmt::Write;
 use std::time::Duration;
 
@@ -58,6 +59,18 @@ impl Game {
         }
         self.position = child;
         return true;
+    }
+    pub fn two_time_repeats(&self) -> Vec<u64> {
+        let mut m = collections::HashMap::new();
+        for key in self.repeats.iter() {
+            if let Some(x) = m.get_mut(key) {
+                *x += 1;
+            } else {
+                m.insert(*key, 1);
+            }
+        }
+        let result: Vec<_> = m.iter().filter(|(_, &v)| v >= 2).map(|(&k, _)| k).collect();
+        return result;
     }
 }
 
