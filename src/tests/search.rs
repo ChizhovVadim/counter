@@ -12,7 +12,7 @@ pub fn search_handler() {
         .unwrap();
     let abort = sync::Arc::new(sync::atomic::AtomicBool::new(false));
     let fixed_time = Duration::from_secs(30);
-    let tm = Box::new(uci::TimeManager::new(abort, Some(fixed_time), None, None));
+    let tm = Box::new(uci::FixedTimeManager::new(abort, Some(fixed_time), None, None));
     let res = eng.search(types::SearchParams{
         position: pos,
         repeats: Vec::new(),

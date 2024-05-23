@@ -7,7 +7,7 @@ use std::sync::atomic::AtomicBool;
 use std::sync::mpsc;
 use std::thread;
 use std::time::Duration;
-pub use timemanager::TimeManager;
+pub use timemanager::{FixedTimeManager, SimpleTimeManager};
 
 mod parse;
 mod timemanager;
@@ -166,17 +166,23 @@ fn build_time_manager(
     if let Some(main) = main {
         let main = Duration::from_millis(main);
         let inc = inc.map(Duration::from_millis);
-        return Box::new(TimeManager::tournament(abort, main, inc, limits.moves));
+        return Box::new(SimpleTimeManager::new(abort, main, inc, limits.moves));
     }
 
     let fixed_depth = limits.fixed_depth.map(|x| x as usize);
     let fixed_nodes = limits.fixed_nodes;
     let fixed_time = limits.fixed_time.map(Duration::from_millis);
 
-    return Box::new(TimeManager::new(
+    return Box::new(FixedTimeManager::new(
         abort,
         fixed_time,
         fixed_depth,
         fixed_nodes,
     ));
+}
+
+pub fn show_search_progress(si: &types::SearchInfo) {
+    if si.nodes >= 500_000 {
+        parse::print_uci_search_info(&si);
+    }
 }

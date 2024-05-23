@@ -93,7 +93,7 @@ impl Engine {
             experiment: false,
             evaluator: evaluator,
             trans_table: transtable::TransTable::new(128),
-            time_manager: Box::new(uci::TimeManager::default()),
+            time_manager: Box::new(uci::FixedTimeManager::default()),
             repeats: Vec::new(),
             nodes: 0,
             root_depth: 0,
