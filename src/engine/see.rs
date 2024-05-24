@@ -1,4 +1,4 @@
-use crate::chess::{self, Square, PIECE_BISHOP};
+use crate::chess;
 
 #[derive(Debug)]
 struct SeeTest {
@@ -104,7 +104,7 @@ fn least_valuable_attacker(
     occ: u64,
 ) -> (chess::Piece, chess::Square) {
     let own = p.colours(side) & occ;
-    if let Some(from) = first_one(chess::bitboard::pawn_attacks(side ^ 1, to) & own & p.pawns){
+    if let Some(from) = first_one(chess::bitboard::pawn_attacks(side ^ 1, to) & own & p.pawns) {
         return (chess::PIECE_PAWN, from);
     }
     if let Some(from) = first_one(chess::bitboard::knight_attacks(to) & own & p.knights) {
@@ -127,7 +127,7 @@ fn least_valuable_attacker(
     return (chess::PIECE_EMPTY, chess::square::SQUARE_NONE);
 }
 
-fn first_one(b: u64) -> Option<Square> {
+fn first_one(b: u64) -> Option<chess::Square> {
     if b == 0 {
         return None;
     }
@@ -138,7 +138,7 @@ static PIECE_VALUES_SEE: [isize; chess::PIECE_NB] = [0, 1, 4, 4, 6, 12, 120, 0];
 
 //------------
 
-fn compute_attackers(pos: &chess::Position, sq: Square, occ: u64) -> u64 {
+fn compute_attackers(pos: &chess::Position, sq: chess::Square, occ: u64) -> u64 {
     return (chess::bitboard::pawn_attacks(chess::SIDE_WHITE, sq) & pos.pawns & pos.black)
         | (chess::bitboard::pawn_attacks(chess::SIDE_BLACK, sq) & pos.pawns & pos.white)
         | (chess::bitboard::knight_attacks(sq) & pos.knights)
@@ -151,41 +151,23 @@ fn get_least_valuable_attacker(
     p: &chess::Position,
     attackers: u64,
 ) -> (chess::Piece, chess::Square) {
-    if p.pawns & attackers != 0 {
-        return (
-            chess::PIECE_PAWN,
-            chess::bitboard::first_one(p.pawns & attackers),
-        );
+    if let Some(from) = first_one(p.pawns & attackers) {
+        return (chess::PIECE_PAWN, from);
     }
-    if p.knights & attackers != 0 {
-        return (
-            chess::PIECE_KNIGHT,
-            chess::bitboard::first_one(p.knights & attackers),
-        );
+    if let Some(from) = first_one(p.knights & attackers) {
+        return (chess::PIECE_KNIGHT, from);
     }
-    if p.bishops & attackers != 0 {
-        return (
-            chess::PIECE_BISHOP,
-            chess::bitboard::first_one(p.bishops & attackers),
-        );
+    if let Some(from) = first_one(p.bishops & attackers) {
+        return (chess::PIECE_BISHOP, from);
     }
-    if p.rooks & attackers != 0 {
-        return (
-            chess::PIECE_ROOK,
-            chess::bitboard::first_one(p.rooks & attackers),
-        );
+    if let Some(from) = first_one(p.rooks & attackers) {
+        return (chess::PIECE_ROOK, from);
     }
-    if p.queens & attackers != 0 {
-        return (
-            chess::PIECE_QUEEN,
-            chess::bitboard::first_one(p.queens & attackers),
-        );
+    if let Some(from) = first_one(p.queens & attackers) {
+        return (chess::PIECE_QUEEN, from);
     }
-    if p.kings & attackers != 0 {
-        return (
-            chess::PIECE_KING,
-            chess::bitboard::first_one(p.kings & attackers),
-        );
+    if let Some(from) = first_one(p.kings & attackers) {
+        return (chess::PIECE_KING, from);
     }
     return (chess::PIECE_EMPTY, chess::square::SQUARE_NONE);
 }
@@ -220,15 +202,14 @@ pub fn see_ge(pos: &chess::Position, mv: chess::Move, threshold: isize) -> bool 
 
     let mut occupied =
         pos.all_pieces() & !chess::bitboard::square_mask(from) | chess::bitboard::square_mask(to);
-    /*if movingPiece == Pawn && to == pos.EpSquare {
-        var capSq int
-        if pos.WhiteMove {
-            capSq = to - 8
+    if moving_piece == chess::PIECE_PAWN && to == pos.ep_square {
+        let cap_sq = if pos.side_to_move == chess::SIDE_WHITE {
+            to - 8
         } else {
-            capSq = to + 8
-        }
-        occupied &^= SquareMask[capSq]
-    }*/
+            to + 8
+        };
+        occupied &= !chess::bitboard::square_mask(cap_sq);
+    }
 
     let mut attackers = compute_attackers(pos, to, occupied) & occupied;
 
