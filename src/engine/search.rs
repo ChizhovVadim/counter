@@ -22,6 +22,12 @@ impl Engine {
                 return result;
             }
         }
+
+        for h in 0..=2 {
+            self.stack[h].killer1 = Move::EMPTY;
+            self.stack[h].killer2 = Move::EMPTY;
+        }
+
         for depth in 1..MAX_HEIGHT {
             if self.time_manager.check_timeout() {
                 break;
@@ -34,6 +40,7 @@ impl Engine {
                 depth as isize,
                 0,
                 None,
+                NODETYPE_NORMAL,
             );
             match score {
                 Some(score) => {
@@ -61,9 +68,10 @@ impl Engine {
         pos: &Position,
         mut alpha: isize,
         mut beta: isize,
-        depth: isize,
+        mut depth: isize,
         height: usize,
         skip_move: Option<Move>,
+        node_type: i8,
     ) -> Option<isize> {
         if depth <= 0 {
             return self.qs(pos, alpha, beta, height);
@@ -112,13 +120,20 @@ impl Engine {
         }
 
         let static_eval = self.evalaute(pos);
+        self.stack[height].static_eval = static_eval;
+        let improving = height < 2 || static_eval > self.stack[height - 2].static_eval;
+
         let mut history = chess::History::new();
         let mut tt_move_is_singular = false;
+
+        if height + 2 <= MAX_HEIGHT {
+            self.stack[height + 2].killer1 = Move::EMPTY;
+            self.stack[height + 2].killer2 = Move::EMPTY;
+        }
 
         if !root_node && skip_move.is_none() {
             if !pv_node && !in_check && beta > VALUE_LOSS && beta < VALUE_WIN {
                 if depth <= 8 {
-                    const PAWN_VALUE: isize = 100;
                     let score = static_eval - PAWN_VALUE * depth;
                     if score >= beta {
                         return Some(static_eval);
@@ -132,7 +147,7 @@ impl Engine {
                     && allow_nmp(pos)
                     && static_eval >= beta
                 {
-                    let reduction = 4 + depth / 6; //+ Min(2, (staticEval-beta)/200)
+                    let reduction = 4 + depth / 6 + ((static_eval - beta) / 200).min(2);
 
                     //make move
                     let mut child = pos.clone();
@@ -151,12 +166,74 @@ impl Engine {
                         depth - reduction,
                         height + 1,
                         None,
+                        -node_type,
                     )?);
                     self.evaluator.unmake_move();
                     if score >= beta {
-                        return Some(beta);
+                        if score >= VALUE_WIN {
+                            return Some(beta);
+                        }
+                        return Some(score);
                     }
                 }
+
+                let probcut_beta = (beta + 150).min(VALUE_WIN - 1);
+                if depth >= 5 && !(tt_hit && tt_value < probcut_beta && tt_bound & BOUND_UPPER != 0)
+                {
+                    let mut ml = chess::MoveList::new();
+                    chess::movegen::generate_noisy_moves(pos, &mut ml);
+                    moveiter::eval_noisy(&mut ml.moves[..ml.size], pos, tt_move);
+                    let mut mi = moveiter::MovePicker::new(&mut ml.moves[..ml.size]);
+
+                    while let Some(mv) = mi.next() {
+                        if !see::see_ge(pos, mv, 0) {
+                            continue;
+                        }
+
+                        //make move
+                        let mut child = pos.clone();
+                        if !child.make_move(mv, &mut history) {
+                            continue;
+                        }
+                        self.evaluator.make_move(&history);
+                        self.stack[height].current_mv = mv;
+                        self.stack[height + 1].key = child.key;
+                        if self.check_timeout() {
+                            return None;
+                        }
+
+                        let mut score =
+                            -(self.qs(&child, -probcut_beta, -(probcut_beta - 1), height + 1)?);
+                        if score >= probcut_beta {
+                            score = -(self.alphabeta(
+                                &child,
+                                -probcut_beta,
+                                -(probcut_beta - 1),
+                                depth - 4,
+                                height + 1,
+                                None,
+                                -node_type,
+                            )?);
+                        }
+                        self.evaluator.unmake_move();
+                        if score >= probcut_beta {
+                            if !(tt_hit && tt_depth >= depth - 3) {
+                                self.trans_table.update(
+                                    pos.key,
+                                    depth - 3,
+                                    value_to_tt(score, height),
+                                    BOUND_LOWER,
+                                    mv,
+                                );
+                            }
+                            return Some(score);
+                        }
+                    }
+                }
+            }
+
+            if tt_move == Move::EMPTY && depth >= 5 && node_type != NODETYPE_ALL {
+                depth -= 1;
             }
 
             // singular extension
@@ -177,6 +254,7 @@ impl Engine {
                     depth / 2,
                     height,
                     Some(tt_move),
+                    node_type,
                 )?;
                 tt_move_is_singular = score < singular_beta
             }
@@ -218,9 +296,13 @@ impl Engine {
             unsafe { std::mem::MaybeUninit::uninit().assume_init() };
         let mut quiet_count = 0;
 
-        let lmp = 3 + depth * depth;
+        let mut lmp = 3 + depth * depth;
+        if !improving {
+            lmp /= 2;
+        }
         let old_alpha = alpha;
         let mut best_move = tt_move;
+        let mut best = loss_in(height);
 
         while let Some(mv) = mi.next() {
             if Some(mv) == skip_move {
@@ -232,19 +314,24 @@ impl Engine {
                 quiets_seen += 1;
             }
 
-            if depth <= 8 && alpha > VALUE_LOSS && has_legal_move && !in_check && !root_node {
-                if !is_noisy && quiets_seen > lmp {
-                    mi.skip_queits();
-                    continue;
+            if depth <= 8 && best > VALUE_LOSS && has_legal_move && !in_check && !root_node {
+                if !(is_noisy || mv == killer1 || mv == killer2) {
+                    if quiets_seen > lmp {
+                        mi.skip_queits();
+                        continue;
+                    }
+
+                    if static_eval + 100 + 100 * depth <= alpha
+                        && moves_searched >= 2
+                        && !is_pawn_advance(mv, pos.side_to_move)
+                    {
+                        best = best.max(static_eval);
+                        continue;
+                    }
                 }
 
-                /*let see_value = see::see(pos, mv);
-                if see::see_ge(pos, mv, see_value+1) ||
-                    !see::see_ge(pos, mv, see_value-1) {
-                    panic!("see fail {} {} {}", pos, mv, see_value);
-                }*/
-
-                if !see::see_ge(pos, mv, -depth) {
+                let see_margin = if is_noisy { depth } else { depth / 2 };
+                if !see::see_ge(pos, mv, -see_margin) {
                     continue;
                 }
             }
@@ -269,9 +356,9 @@ impl Engine {
             if mv == tt_move && tt_move_is_singular {
                 extension = 1;
             }
-            /*if in_check && !root_node && height + (depth as usize) < self.root_depth {
+            if in_check && !root_node && height < 2 * self.root_depth {
                 extension = 1;
-            }*/
+            }
 
             let new_depth = depth - 1 + extension;
             let mut reduction = 0;
@@ -289,6 +376,12 @@ impl Engine {
                 if !pv_node {
                     reduction += 1;
                 }
+                if !improving {
+                    reduction += 1;
+                }
+                if node_type == NODETYPE_CUT {
+                    reduction += 1;
+                }
                 if gives_check {
                     reduction -= 1;
                 }
@@ -303,7 +396,15 @@ impl Engine {
 
             let mut score = alpha + 1;
             if moves_searched == 1 || new_depth <= 0 {
-                score = -(self.alphabeta(&child, -beta, -alpha, new_depth, height + 1, None)?);
+                score = -(self.alphabeta(
+                    &child,
+                    -beta,
+                    -alpha,
+                    new_depth,
+                    height + 1,
+                    None,
+                    -node_type,
+                )?);
             } else {
                 score = -(self.alphabeta(
                     &child,
@@ -312,6 +413,7 @@ impl Engine {
                     new_depth - reduction,
                     height + 1,
                     None,
+                    NODETYPE_CUT,
                 )?);
                 if reduction > 0 && score > alpha {
                     score = -(self.alphabeta(
@@ -321,15 +423,24 @@ impl Engine {
                         new_depth,
                         height + 1,
                         None,
+                        -node_type,
                     )?);
                 }
                 if pv_node && score > alpha {
-                    score =
-                        -(self.alphabeta(&child, -beta, -alpha, new_depth, height + 1, None)?);
+                    score = -(self.alphabeta(
+                        &child,
+                        -beta,
+                        -alpha,
+                        new_depth,
+                        height + 1,
+                        None,
+                        -node_type,
+                    )?);
                 }
             }
             self.evaluator.unmake_move();
 
+            best = best.max(score);
             if score > alpha {
                 alpha = score;
                 best_move = mv;
@@ -371,10 +482,10 @@ impl Engine {
                 BOUND_UPPER
             };
             self.trans_table
-                .update(pos.key, depth, value_to_tt(alpha, height), bound, best_move);
+                .update(pos.key, depth, value_to_tt(best, height), bound, best_move);
         }
 
-        return Some(alpha);
+        return Some(best);
     }
 
     fn qs(
@@ -408,6 +519,7 @@ impl Engine {
 
         let in_check = pos.is_check();
         let mut ml = chess::MoveList::new();
+        let mut best = loss_in(height);
         if in_check {
             chess::movegen::generate_moves(pos, &mut ml);
             moveiter::eval_moves(
@@ -422,6 +534,7 @@ impl Engine {
             );
         } else {
             let static_eval = self.evalaute(pos);
+            best = best.max(static_eval);
             if static_eval >= alpha {
                 alpha = static_eval;
                 if alpha >= beta {
@@ -435,7 +548,7 @@ impl Engine {
         let mut history = chess::History::new();
         let mut has_legal_move = false;
         while let Some(m) = mi.next() {
-            if alpha > VALUE_LOSS && !in_check && !see::see_ge(pos, m, 0) {
+            if best > VALUE_LOSS && !in_check && !see::see_ge(pos, m, 0) {
                 continue;
             }
 
@@ -455,6 +568,7 @@ impl Engine {
             let score = -(self.qs(&child, -beta, -alpha, height + 1)?);
             self.evaluator.unmake_move();
 
+            best = best.max(score);
             if score > alpha {
                 alpha = score;
                 if alpha >= beta {
@@ -468,7 +582,7 @@ impl Engine {
         if in_check && !has_legal_move {
             return Some(loss_in(height));
         }
-        return Some(alpha);
+        return Some(best);
     }
 
     fn clear_pv(&mut self, height: usize) {
@@ -491,10 +605,13 @@ impl Engine {
             .quik_evaluate(pos)
             .max(-MAX_STATIC_EVAL)
             .min(MAX_STATIC_EVAL);
+
+        static_eval = static_eval * (200 - pos.rule50) / 200;
         if pos.side_to_move == chess::SIDE_BLACK {
             static_eval = -static_eval;
         }
-        return static_eval;
+        const TEMPO: isize = 10;
+        return static_eval + TEMPO;
     }
 
     fn check_timeout(&mut self) -> bool {
@@ -526,6 +643,12 @@ impl Engine {
         return false;
     }
 }
+
+const PAWN_VALUE: isize = 100;
+
+const NODETYPE_NORMAL: i8 = 0;
+const NODETYPE_CUT: i8 = 1;
+const NODETYPE_ALL: i8 = -NODETYPE_CUT;
 
 fn get_pair_mut(stack: &mut [SearchStack], height: usize) -> (&mut SearchStack, &mut SearchStack) {
     let (a, b) = stack.split_at_mut(height + 1);
