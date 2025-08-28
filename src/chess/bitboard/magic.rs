@@ -1,129 +1,26 @@
-use super::{*, square::*};
-
-pub const FILEA_MASK: u64 = 0x0101010101010101;
-pub const FILEH_MASK: u64 = 0x0101010101010101 << 7;
-
-pub const RANK1_MASK: u64 = 0xFF;
-pub const RANK2_MASK: u64 = 0xFF<< (8 * 1);
-pub const RANK7_MASK: u64 = 0xFF<< (8 * 6);
-pub const RANK8_MASK: u64 = 0xFF<< (8 * 7);
-
-static mut SQUARE_MASK: [u64; SQUARE_NB] = [0_u64; SQUARE_NB];
-static mut PAWN_ATTACKS: [[u64; SQUARE_NB]; SIDE_NB] = [[0_u64; SQUARE_NB]; SIDE_NB];
-static mut KNIGHT_ATTACKS: [u64; SQUARE_NB] = [0_u64; SQUARE_NB];
-static mut KING_ATTACKS: [u64; SQUARE_NB] = [0_u64; SQUARE_NB];
-static mut INDEX64: [usize; SQUARE_NB] = [0_usize; SQUARE_NB];
-static mut ROOKATTACKS: [[u64;1<<12];SQUARE_NB]=[[0_u64; 1<<12]; SQUARE_NB];
-static mut BISHOPATTACKS: [[u64;1<<9];SQUARE_NB]=[[0_u64; 1<<9]; SQUARE_NB];
-
-pub const fn up(b: u64) -> u64 {
-    return b << 8;
-}
-
-pub const fn down(b: u64) -> u64 {
-    return b >> 8;
-}
-
-pub const fn right(b: u64) -> u64 {
-    return (b & !FILEH_MASK) << 1;
-}
-
-pub const fn left(b: u64) -> u64 {
-    return (b & !FILEA_MASK) >> 1;
-}
-
-pub const fn up_right(b: u64)-> u64 {
-	return up(right(b));
-}
-
-pub const fn up_left(b: u64) ->u64 {
-	return up(left(b));
-}
-
-pub const fn down_right(b: u64)-> u64 {
-	return down(right(b))
-}
-
-pub const fn down_left(b: u64)-> u64 {
-	return down(left(b))
-}
-
-pub fn all_pawn_attacks(side: usize, b: u64) -> u64 {
-	if side==SIDE_WHITE {
-		return ((b & !FILEA_MASK) << 7) | ((b & !FILEH_MASK) << 9)
-	} else {
-		return ((b & !FILEA_MASK) >> 9) | ((b & !FILEH_MASK) >> 7)
-	}
-}
-
-pub fn pop_count(b: u64) -> isize {
-	return b.count_ones() as isize;
-}
-
-pub fn first_one(b: u64) -> Square {	
-	return b.trailing_zeros() as Square;
-    /*unsafe {
-        let index = (((b - 1) ^ b).wrapping_mul(0x03f79d71b4cb0a89)) >> 58;
-		let j =INDEX64[index as usize];
-		let  k =b.trailing_zeros();
-		if j as u32 != k {
-			panic!("fo");
-		}
-        return j
-    }*/
-}
-
-pub  const fn square_mask(sq: Square) -> u64 {
-	return 1_u64<<sq;
-    /*unsafe {        
-        return SQUARE_MASK[sq];
-    }*/
-}
-
-pub fn more_than_one(value: u64)-> bool {
-	return value != 0 && ((value-1)&value) != 0;
-}
-
-pub fn pawn_attacks(side: usize, from: Square) -> u64 {
-    unsafe {
-        return PAWN_ATTACKS[side][from];
-    }
-}
-
-pub fn knight_attacks(from: Square) -> u64 {
-    unsafe {
-        return KNIGHT_ATTACKS[from];
-    }
-}
-
-pub fn king_attacks(from: Square) -> u64 {
-    unsafe {
-        return KING_ATTACKS[from];
-    }
-}
+use crate::chess::{Square, bitboard};
 
 pub fn bishop_attacks(from: Square, occ: u64) -> u64 {
-    unsafe{
-        let index = ((BISHOPMASK[from]&occ).wrapping_mul(BISHOPMULT[from]))>>BISHOPSHIFT;
+    unsafe {
+        let from = from.index();
+        let index = ((BISHOPMASK[from] & occ).wrapping_mul(BISHOPMULT[from])) >> BISHOPSHIFT;
         return BISHOPATTACKS[from][index as usize];
     }
 }
 
 pub fn rook_attacks(from: Square, occ: u64) -> u64 {
-    unsafe{
-        let index = ((ROOKMASK[from]&occ).wrapping_mul(ROOKMULT[from]))>>ROOKSHIFT;
+    unsafe {
+        let from = from.index();
+        let index = ((ROOKMASK[from] & occ).wrapping_mul(ROOKMULT[from])) >> ROOKSHIFT;
         return ROOKATTACKS[from][index as usize];
     }
-}
-
-pub fn queen_attacks(from: Square, occ: u64) -> u64 {
-    return bishop_attacks(from, occ) | rook_attacks(from, occ);
 }
 
 const BISHOPSHIFT: usize = 55;
 const ROOKSHIFT: usize = 52;
 
-static ROOKMULT: [u64; SQUARE_NB] = [
+#[rustfmt::skip]
+static ROOKMULT: [u64; Square::SQUARE_NB] = [
 	0x0080001020400080, 0x0040001000200040, 0x0080081000200080, 0x0080040800100080,
 	0x0080020400080080, 0x0080010200040080, 0x0080008001000200, 0x0080002040800100,
 	0x0000800020400080, 0x0000400020005000, 0x0000801000200080, 0x0000800800100080,
@@ -142,8 +39,9 @@ static ROOKMULT: [u64; SQUARE_NB] = [
 	0x0001000204080011, 0x0001000204000801, 0x0001000082000401, 0x0001FFFAABFAD1A2,
 ];
 
- static ROOKMASK: [u64; SQUARE_NB] = [
-	0x000101010101017E, 0x000202020202027C, 0x000404040404047A, 0x0008080808080876,
+#[rustfmt::skip]
+static ROOKMASK: [u64; Square::SQUARE_NB] = [
+ 	0x000101010101017E, 0x000202020202027C, 0x000404040404047A, 0x0008080808080876,
 	0x001010101010106E, 0x002020202020205E, 0x004040404040403E, 0x008080808080807E,
 	0x0001010101017E00, 0x0002020202027C00, 0x0004040404047A00, 0x0008080808087600,
 	0x0010101010106E00, 0x0020202020205E00, 0x0040404040403E00, 0x0080808080807E00,
@@ -161,7 +59,8 @@ static ROOKMULT: [u64; SQUARE_NB] = [
 	0x6E10101010101000, 0x5E20202020202000, 0x3E40404040404000, 0x7E80808080808000,
 ];
 
-static BISHOPMULT: [u64; SQUARE_NB] = [
+#[rustfmt::skip]
+static BISHOPMULT: [u64; Square::SQUARE_NB] = [
 	0x0002020202020200, 0x0002020202020000, 0x0004010202000000, 0x0004040080000000,
 	0x0001104000000000, 0x0000821040000000, 0x0000410410400000, 0x0000104104104000,
 	0x0000040404040400, 0x0000020202020200, 0x0000040102020000, 0x0000040400800000,
@@ -180,7 +79,8 @@ static BISHOPMULT: [u64; SQUARE_NB] = [
 	0x0000000010020200, 0x0000000404080200, 0x0000040404040400, 0x0002020202020200,
 ];
 
-static BISHOPMASK: [u64; SQUARE_NB] = [
+#[rustfmt::skip]
+static BISHOPMASK: [u64; Square::SQUARE_NB] = [
 	0x0040201008040200, 0x0000402010080400, 0x0000004020100A00, 0x0000000040221400,
 	0x0000000002442800, 0x0000000204085000, 0x0000020408102000, 0x0002040810204000,
 	0x0020100804020000, 0x0040201008040000, 0x00004020100A0000, 0x0000004022140000,
@@ -199,87 +99,94 @@ static BISHOPMASK: [u64; SQUARE_NB] = [
 	0x0028440200000000, 0x0050080402000000, 0x0020100804020000, 0x0040201008040200,
 ];
 
-fn magicify(b: u64, index: u64)-> u64 {
-	let mut bitmask= 0_u64;
-	let count = b.count_ones();
+static mut ROOKATTACKS: [[u64; 1 << 12]; Square::SQUARE_NB] = [[0_u64; 1 << 12]; Square::SQUARE_NB];
+static mut BISHOPATTACKS: [[u64; 1 << 9]; Square::SQUARE_NB] = [[0_u64; 1 << 9]; Square::SQUARE_NB];
 
-	let mut i = 0;
-	let mut our = b;
-	while i < count {
-		let their = (our-1)&our ^ our;
-		if (1_u64 << i) & index != 0 {
-			bitmask |= their;
-		}
-		our &= our-1;
-		i +=1;
-	}	
+static ROOK_SHIFTS: [fn(u64) -> u64; 4] = [
+    bitboard::up,
+    bitboard::down,
+    bitboard::right,
+    bitboard::left,
+];
 
-	return bitmask;
+static BISHOP_SHIFTS: [fn(u64) -> u64; 4] = [
+    bitboard::up_right,
+    bitboard::up_left,
+    bitboard::down_right,
+    bitboard::down_left,
+];
+
+fn compute_slide_attacks(from: usize, occ: u64, shifts: [fn(u64) -> u64; 4]) -> u64 {
+    let bb = 1 << from;
+    let mut result = 0_u64;
+    for f in shifts {
+        let mut x = f(bb);
+        while x != 0 {
+            result |= x;
+            if (x & occ) != 0 {
+                break;
+            }
+            x = f(x);
+        }
+    }
+    return result;
 }
 
-fn compute_slide_attacks(from: Square, occ: u64, shifts: [fn(u64)->u64;4]) -> u64 {
-	let bb = 1_u64<<from;
-	let mut result = 0_u64;
-	for f in shifts {
-		let mut x = f(bb);
-		while x != 0 {
-			result |= x;
-			if (x & occ) != 0 {
-				break;
-			}
-			x = f(x);
-		}
-	}
-	return result;
+fn compute_rook_attacks(from: usize, occ: u64) -> u64 {
+    return compute_slide_attacks(from, occ, ROOK_SHIFTS);
 }
 
-pub(super) fn init_bitborads() {
+fn compute_bishop_attacks(from: usize, occ: u64) -> u64 {
+    return compute_slide_attacks(from, occ, BISHOP_SHIFTS);
+}
 
-	let rook_shifts = [up, down, right, left];
-	let bishop_shifts = [up_right, up_left, down_right, down_left];
+const fn magicify(b: u64, index: u64) -> u64 {
+    let mut bitmask = 0_u64;
+    let count = b.count_ones();
 
+    let mut i = 0;
+    let mut our = b;
+    while i < count {
+        let their = (our - 1) & our ^ our;
+        if (1_u64 << i) & index != 0 {
+            bitmask |= their;
+        }
+        our &= our - 1;
+        i += 1;
+    }
+
+    return bitmask;
+}
+
+pub(super) unsafe fn init() {
     unsafe {
-        for sq in 0..SQUARE_NB {
-            let b = 1_u64 << sq;
-            SQUARE_MASK[sq] = b;
+        for sq in 0..Square::SQUARE_NB {
+            //let b = 1_u64 << sq;
 
-            let i = (((b - 1) ^ b).wrapping_mul(0x03f79d71b4cb0a89)) >> 58;
-            INDEX64[i as usize] = sq;
+            //Rooks
+            let mask = ROOKMASK[sq];
+            let count = 1_u64 << mask.count_ones();
+            for i in 0..count {
+                let from = sq;
+                let occ: u64 = magicify(mask, i);
+                let attacks = compute_rook_attacks(from, occ);
 
-            PAWN_ATTACKS[SIDE_WHITE][sq] = up(left(b) | right(b));
-            PAWN_ATTACKS[SIDE_BLACK][sq] = down(left(b) | right(b));
+                let index = ((ROOKMASK[from] & occ).wrapping_mul(ROOKMULT[from])) >> ROOKSHIFT;
+                ROOKATTACKS[from][index as usize] = attacks;
+            }
 
-            KING_ATTACKS[sq] = up(right(b)) | up(b) | up(left(b)) | left(b) |
-				down(left(b)) | down(b) | down(right(b)) | right(b);
+            //Bishops
+            let mask = BISHOPMASK[sq];
+            let count = 1_u64 << mask.count_ones();
+            for i in 0..count {
+                let from = sq;
+                let occ: u64 = magicify(mask, i);
+                let attacks = compute_bishop_attacks(from, occ);
 
-            KNIGHT_ATTACKS[sq] = right(up(right(b))) | up(up(right(b))) |
-				up(up(left(b))) | left(up(left(b))) |
-				left(down(left(b))) | down(down(left(b))) |
-				down(down(right(b))) | right(down(right(b)));
-
-			//Rooks
-			let mask = ROOKMASK[sq];//rook_attacks_slow(from, 0);
-			let count = 1_u64 << mask.count_ones();
-			for i in 0 .. count {
-				let from = sq;
-				let occ: u64 = magicify(mask, i);
-				let attacks = compute_slide_attacks(from, occ, rook_shifts);
-
-				let index = ((ROOKMASK[from]&occ).wrapping_mul(ROOKMULT[from]))>>ROOKSHIFT;
-        		ROOKATTACKS[from][index as usize]= attacks;
-			}
-
-			//Bishops
-			let mask = BISHOPMASK[sq];
-			let count = 1_u64 << mask.count_ones();
-			for i in 0 .. count {
-				let from = sq;
-				let occ: u64 = magicify(mask, i);
-				let attacks = compute_slide_attacks(from, occ, bishop_shifts);
-
-				let index = ((BISHOPMASK[from]&occ).wrapping_mul(BISHOPMULT[from]))>>BISHOPSHIFT;
-        		BISHOPATTACKS[from][index as usize]= attacks;
-			}
+                let index =
+                    ((BISHOPMASK[from] & occ).wrapping_mul(BISHOPMULT[from])) >> BISHOPSHIFT;
+                BISHOPATTACKS[from][index as usize] = attacks;
+            }
         }
     }
 }

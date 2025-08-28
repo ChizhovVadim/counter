@@ -1,62 +1,91 @@
-use std::time::Duration;
-
-use crate::chess::{self, Move, Position};
-use crate::types;
-use crate::uci;
-pub use history::HistoryTable;
-pub use moveiter::MovePicker;
-use std::sync;
-pub use transtable::TransTable;
-use utils::*;
-
 mod history;
-mod moveiter;
-mod search;
+mod moveorder;
+//mod search;
+mod search_counter55;
 mod see;
+mod timemanager;
 mod transtable;
 mod utils;
 
+use crate::chess::{Move, Position};
+use crate::domain::{
+    CancelToken, EngineOption, IEngine, IEvaluator, LimitsType, OptionValue, SearchInfo,
+    SearchParams,
+};
+use crate::eval;
+use history::HistoryTable;
+use timemanager::TimeManager;
+use transtable::TransTable;
+
 pub struct Engine {
     experiment: bool,
-    evaluator: Box<dyn types::IEvaluator>,
-    trans_table: transtable::TransTable,
-    time_manager: Box<dyn types::ITimeManager>,
-    repeats: Vec<u64>,
     nodes: u64,
-    root_depth: usize,
-    stack: [SearchStack; utils::STACK_SIZE],
-    reductions: [[i8; 64]; 64],
-    history: history::HistoryTable,
+    stack: Vec<SearchStack>,
+    evaluator: Box<dyn IEvaluator>,
+    time_manager: TimeManager,
+    repeats: Vec<u64>,
+    trans_table: TransTable,
+    reductions: utils::Reductions,
+    history: HistoryTable,
+    progress: Box<dyn FnMut(&SearchInfo)>,
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 struct SearchStack {
+    position: Position,
     static_eval: isize,
-    killer1: chess::Move,
-    killer2: chess::Move,
-    current_mv: chess::Move,
-    key: u64,
-    pv: [chess::Move; STACK_SIZE],
+    killer1: Move,
+    killer2: Move,
+    current_mv: Move,
+    pv: [Move; utils::STACK_SIZE],
     pv_size: usize,
 }
 
-impl types::IEngine for Engine {
-    fn get_options(&self) -> Vec<types::EngineOption> {
+impl Engine {
+    pub fn new() -> Self {
+        return Engine {
+            experiment: false,
+            nodes: 0,
+            evaluator: eval::make_eval("").unwrap(),
+            time_manager: TimeManager::new(LimitsType::default(), CancelToken::new()),
+            repeats: Vec::new(),
+            trans_table: TransTable::new(64),
+            reductions: utils::Reductions::new(utils::lmr_main),
+            history: HistoryTable::new(),
+            progress: Box::new(|_| {}),
+            stack: vec![unsafe { std::mem::zeroed() }; utils::STACK_SIZE],
+        };
+    }
+}
+
+impl IEngine for Engine {
+    fn clear(&mut self) {
+        self.trans_table.clear();
+        self.history.clear();
+        for stack in &mut self.stack {
+            stack.killer1 = Move::NONE;
+            stack.killer2 = Move::NONE;
+        }
+        eprintln!("engine clear");
+    }
+
+    fn get_options(&self) -> Vec<EngineOption> {
         return vec![
-            types::EngineOption {
+            EngineOption {
                 name: "Hash",
-                value: types::OptionValue::Int {
+                value: OptionValue::Int {
                     min: 4,
                     max: 1 << 16,
                     value: self.trans_table.size() as isize,
                 },
             },
-            types::EngineOption {
+            EngineOption {
                 name: "ExperimentSettings",
-                value: types::OptionValue::Bool(self.experiment),
+                value: OptionValue::Bool(self.experiment),
             },
         ];
     }
+
     fn set_option(&mut self, name: &str, value: &str) {
         match name {
             "Hash" => {
@@ -65,59 +94,21 @@ impl types::IEngine for Engine {
                 }
             }
             "ExperimentSettings" => {
-                self.experiment = value == "true";
+                self.experiment = value.eq_ignore_ascii_case("true");
             }
             _ => (),
         }
     }
-    fn prepare(&mut self) {}
-    fn clear(&mut self) {
-        self.trans_table.clear();
-        self.history.clear();
-        // TODO clear killers
-    }
-    fn search(&mut self, search_params: types::SearchParams) -> types::SearchInfo {
-        self.time_manager = search_params.time_manager;
+
+    fn search(&mut self, search_params: SearchParams) -> SearchInfo {
+        self.time_manager = TimeManager::new(search_params.limits, search_params.cancel);
         self.repeats = search_params.repeats;
+        self.progress = search_params.progress;
+        self.stack[0].position = search_params.position.clone();
+        self.evaluator.init(&self.stack[0].position);
+
         self.trans_table.inc_date();
-        self.evaluator.init(&search_params.position);
-        self.stack[0].key = search_params.position.key;
         self.nodes = 0;
-        return self.iterative_deepening(&search_params.position);
-    }
-}
-
-impl Engine {
-    pub fn new(evaluator: Box<dyn types::IEvaluator>) -> Box<Self> {
-        let mut eng = Box::new(Engine {
-            experiment: false,
-            evaluator: evaluator,
-            trans_table: transtable::TransTable::new(128),
-            time_manager: Box::new(uci::FixedTimeManager::default()),
-            repeats: Vec::new(),
-            nodes: 0,
-            root_depth: 0,
-            stack: [SearchStack {
-                static_eval: 0,
-                killer1: Move::EMPTY,
-                killer2: Move::EMPTY,
-                current_mv: Move::EMPTY,
-                key: 0_u64,
-                pv_size: 0,
-                pv: [Move::EMPTY; STACK_SIZE],
-            }; utils::STACK_SIZE],
-            reductions: [[0_i8; 64]; 64],
-            history: history::HistoryTable::new(),
-        });
-
-        let k = 2_f64 / 5_f64.ln() / 22_f64.ln();
-        for d in 1..64 {
-            for m in 1..64 {
-                let r = k * (d as f64).ln() * (m as f64).ln();
-                eng.reductions[d][m] = r as i8;
-            }
-        }
-
-        return eng;
+        return search_counter55::iterative_deepening(self);
     }
 }

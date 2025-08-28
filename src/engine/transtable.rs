@@ -10,26 +10,14 @@ pub struct TransTable {
     date: u16,
 }
 
+#[derive(Default)]
 struct TransEntry {
     key: u32,
     mv: Move,
     date: u16,
     score: i16,
-    depth: u8,
+    depth: i8,
     bound: u8,
-}
-
-impl Default for TransEntry {
-    fn default() -> Self {
-        TransEntry {
-            key: 0,
-            mv: Move::EMPTY,
-            date: 0,
-            score: 0,
-            depth: 0,
-            bound: 0,
-        }
-    }
 }
 
 impl TransTable {
@@ -53,7 +41,7 @@ impl TransTable {
             return;
         }
         self.entries = Vec::new(); // clear large object in heap
-        eprintln!("init trans table {}", megabytes);
+        eprintln!("init trans table {megabytes}");
         let mut table = Vec::with_capacity(size);
         for _ in 0..size {
             table.push(TransEntry::default());
@@ -68,27 +56,7 @@ impl TransTable {
 
     pub fn clear(&mut self) {
         self.date = 0;
-        for entry in self.entries.iter_mut() {
-            *entry = TransEntry::default();
-        }
-    }
-
-    pub fn update(&mut self, key: u64, depth: isize, score: isize, bound: usize, mv: Move) {
-        let index = key % (self.entries.len() as u64);
-        let entry = &mut self.entries[index as usize];
-        let replace = if entry.key == (key >> 32) as u32 {
-            depth >= (entry.depth as isize) - 3 || bound == BOUND_EXACT
-        } else {
-            entry.date != self.date || depth >= entry.depth as isize
-        };
-        if replace {
-            entry.date = self.date;
-            entry.key = (key >> 32) as u32;
-            entry.depth = depth as u8;
-            entry.score = score as i16;
-            entry.bound = bound as u8;
-            entry.mv = mv;
-        }
+        self.entries.fill_with(Default::default);
     }
 
     //(depth, score, bound, move, ok)
@@ -105,7 +73,64 @@ impl TransTable {
                 true,
             );
         } else {
-            return (0, 0, 0, Move::EMPTY, false);
+            return (0, 0, 0, Move::default(), false);
         }
+    }
+
+    pub fn update(&mut self, key: u64, depth: isize, score: isize, bound: usize, mv: Move) {
+        let index = key % (self.entries.len() as u64);
+        let entry = &mut self.entries[index as usize];
+        let existing = entry.key == (key >> 32) as u32;
+        if existing {
+            if !(depth >= (entry.depth as isize) - 3 || bound == BOUND_EXACT) {
+                if mv != Move::NONE
+                    && !(entry.mv != Move::NONE && (entry.bound as usize & BOUND_LOWER) != 0)
+                {
+                    entry.mv = mv;
+                }
+                return;
+            }
+            if mv != Move::NONE {
+                entry.mv = mv;
+            }
+        } else {
+            if !(entry.date != self.date || depth >= entry.depth as isize) {
+                return;
+            }
+            entry.key = (key >> 32) as u32;
+            entry.mv = mv;
+        }
+        entry.date = self.date;
+        entry.depth = depth as i8;
+        entry.score = score as i16;
+        entry.bound = bound as u8;
+    }
+
+    pub fn update_old_policy(
+        &mut self,
+        key: u64,
+        depth: isize,
+        score: isize,
+        bound: usize,
+        mv: Move,
+    ) {
+        let index = key % (self.entries.len() as u64);
+        let entry = &mut self.entries[index as usize];
+        let existing = entry.key == (key >> 32) as u32;
+        if existing {
+            if !(depth >= (entry.depth as isize) - 3 || bound == BOUND_EXACT) {
+                return;
+            }
+        } else {
+            if !(entry.date != self.date || depth >= entry.depth as isize) {
+                return;
+            }
+        }
+        entry.date = self.date;
+        entry.key = (key >> 32) as u32;
+        entry.depth = depth as i8;
+        entry.score = score as i16;
+        entry.bound = bound as u8;
+        entry.mv = mv;
     }
 }

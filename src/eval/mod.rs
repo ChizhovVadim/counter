@@ -1,15 +1,12 @@
-use crate::chess;
-use crate::types;
+pub mod material;
+pub mod nnue;
 
-mod material;
-mod nnue;
-mod pesto;
+use crate::domain::IEvaluator;
 
-pub fn make_eval(name: &str) -> Box<dyn types::IEvaluator> {
+pub fn make_eval(name: &str) -> Option<Box<dyn IEvaluator>> {
     match name {
-        "material" => return Box::new(material::MaterialEvaluationService::new()),
-        "pesto" => return Box::new(pesto::PestoEvaluationService::new()),
-        "" | "nnue" => return nnue::NnueEvaluationService::new(),
-        _ => panic!("make_eval {}", name),
+        "material" => return Some(Box::new(material::MaterialEvaluationService::new())),
+        "nnue" | "" => return Some(Box::new(nnue::NnueEvaluationService::new())),
+        _ => None,
     }
 }
