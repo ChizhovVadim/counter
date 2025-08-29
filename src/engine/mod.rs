@@ -8,10 +8,7 @@ mod transtable;
 mod utils;
 
 use crate::chess::{Move, Position};
-use crate::domain::{
-    CancelToken, EngineOption, IEngine, IEvaluator, LimitsType, OptionValue, SearchInfo,
-    SearchParams,
-};
+use crate::domain::{EngineOption, IEngine, IEvaluator, OptionValue, SearchInfo, SearchParams};
 use crate::eval;
 use history::HistoryTable;
 use timemanager::TimeManager;
@@ -47,7 +44,7 @@ impl Engine {
             experiment: false,
             nodes: 0,
             evaluator: eval::make_eval("").unwrap(),
-            time_manager: TimeManager::new(LimitsType::default(), CancelToken::new()),
+            time_manager: TimeManager::default(),
             repeats: Vec::new(),
             trans_table: TransTable::new(64),
             reductions: utils::Reductions::new(utils::lmr_main),
@@ -101,7 +98,11 @@ impl IEngine for Engine {
     }
 
     fn search(&mut self, search_params: SearchParams) -> SearchInfo {
-        self.time_manager = TimeManager::new(search_params.limits, search_params.cancel);
+        self.time_manager = TimeManager::new(
+            search_params.limits,
+            search_params.cancel,
+            search_params.position.side_to_move,
+        );
         self.repeats = search_params.repeats;
         self.progress = search_params.progress;
         self.stack[0].position = search_params.position.clone();

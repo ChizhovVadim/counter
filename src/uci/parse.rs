@@ -90,11 +90,11 @@ fn parse_limits(split: &mut std::str::SplitAsciiWhitespace) -> Option<LimitsType
             }
             "winc" => {
                 let millis: u64 = split.next()?.parse().ok()?;
-                result.tournament.white_increment = Some(millis);
+                result.tournament.white_increment = millis;
             }
             "binc" => {
                 let millis: u64 = split.next()?.parse().ok()?;
-                result.tournament.black_increment = Some(millis);
+                result.tournament.black_increment = millis;
             }
             "movestogo" => {
                 let moves: u32 = split.next()?.parse().ok()?;

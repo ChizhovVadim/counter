@@ -26,8 +26,8 @@ pub trait IEngine {
 pub struct TournamentLimit {
     pub white_time: Option<u64>,
     pub black_time: Option<u64>,
-    pub white_increment: Option<u64>,
-    pub black_increment: Option<u64>,
+    pub white_increment: u64,
+    pub black_increment: u64,
     pub moves: Option<u32>,
 }
 
